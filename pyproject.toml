@@ -1,0 +1,22 @@
+[project]
+name = "polyxrd-graphite"
+version = "1.0.0"
+description = "PolyXRD Graphite — 石墨化度 / Lc / La 测定工具"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "PolyXRD Team" }]
+dependencies = ["PySide6>=6.6", "numpy>=1.24"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pyinstaller>=6.0", "pillow>=10"]
+
+[project.scripts]
+polyxrd-graphite = "graphite_app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# 受控环境里 tempfile 可能不可用，测试不依赖 tmp_path
+addopts = "-q"
+
+[tool.setuptools]
+py-modules = ["graphite_app", "graphite_engine", "i18n", "registration"]

@@ -1,0 +1,7 @@
+# 内部评估版标记文件
+#
+# build_exe.bat 构建单文件内部评估版时经 --add-data 打入包根目录，
+# graphite_app._detect_variant() 据此判定 BUILD_VARIANT = "internal"：
+#   无注册机制；状态栏最右侧显示「内部评估版本」。
+#
+# 源码运行与 Setup 安装版均无此文件 → BUILD_VARIANT = "setup"（含注册机制）。

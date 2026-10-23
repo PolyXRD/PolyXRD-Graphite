@@ -1,0 +1,27 @@
+# 构建产物
+build/
+dist/
+*.spec
+!packaging/*.spec
+
+# 运行期日志 / 临时
+*.log
+selftest.log
+.tmpbuild/
+tmp*/
+pytest-cache-files-*/
+pytest-of-*/
+.pytest_cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 工具链的项目数据（记忆 / 会话），不进版本库
+.workbuddy/
+
+# 仅开发方保留（注册码生成工具不随发行物分发）
+# make_reg_code.py 仍留在仓库，但不要打进安装包
