@@ -33,7 +33,7 @@ sys.path.insert(0, str(ROOT))
 import numpy as np  # noqa: E402
 from PySide6.QtCore import QBuffer, QIODevice, Qt  # noqa: E402
 from PySide6.QtWidgets import (QApplication, QLabel, QMessageBox,  # noqa: E402
-                               QPushButton, QTextBrowser, QWidget)
+                               QPushButton, QSizeGrip, QTextBrowser, QWidget)
 
 import graphite_app as A  # noqa: E402
 import graphite_engine as E  # noqa: E402
@@ -271,6 +271,31 @@ def main() -> int:
     else:
         check(A.variant_name() == T.tr("status.internal_eval"), "internal 变体名称已翻译")
         check(win._reg is None, "内部评估版无注册管理器")
+
+    print("[10b] 内部评估版状态栏排布（居中 / 加粗 / 红色）")
+    origin = A.BUILD_VARIANT
+    A.BUILD_VARIANT = "internal"       # 临时切变体，源码环境下也能构造内部评估版窗口
+    w2 = A.MainWindow()
+    w2.show()
+    app.processEvents()
+    lbl = w2._reg_label
+    sb2 = w2.statusBar()
+    check(lbl.objectName() == "statusEval", "评估提示使用独立样式类 statusEval")
+    check(bool(lbl.alignment() & Qt.AlignHCenter), "评估提示水平居中")
+    cx = lbl.mapTo(sb2, lbl.rect().center()).x()
+    # 状态栏右下角有 17 px 的尺寸手柄，居中的参照系是「可用区」而非整条宽度
+    grip = sb2.findChild(QSizeGrip)
+    avail = sb2.width() - (grip.width() if grip is not None else 0)
+    check(abs(cx - avail // 2) <= 4,
+          f"提示位于状态栏中线（{cx} vs {avail // 2}）")
+    css = w2.styleSheet()
+    rule = css.split("QLabel#statusEval")[1].split("}")[0] if "QLabel#statusEval" in css else ""
+    check("#c62828" in rule, f"评估提示为红色（{rule.strip()[:24]}…）")
+    check("font-weight: 700" in rule, "评估提示加粗")
+    check("font-size" not in rule, "评估提示未单独改字号（沿用全局）")
+    check("内部评估版本" in lbl.text(), f"评估提示文案：{lbl.text()}")
+    w2.close()
+    A.BUILD_VARIANT = origin
 
     print("[11] 截图输出")
     if "--shot" in sys.argv:

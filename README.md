@@ -12,13 +12,13 @@
 提供两种发行形态：**Setup 安装版**（对外发布，含注册机制）与
 **单文件内部评估版**（免安装，内部使用，无注册机制）。
 
-> 当前版本 **v1.0.0** · 界面支持 **简体中文 / English / 日本語**，
+> 当前版本 **v1.0.1** · 界面支持 **简体中文 / English / 日本語**，
 > 通过菜单栏「语言」菜单可在软件运行中即时切换（选择记忆在本地）。
 >
-> Current version **v1.0.0** · UI available in **简体中文 / English / 日本語**,
+> Current version **v1.0.1** · UI available in **简体中文 / English / 日本語**,
 > switchable at runtime from the **Language** menu (top-right); the choice is remembered locally.
 >
-> バージョン **v1.0.0** · UI は **简体中文 / English / 日本語** に対応、
+> バージョン **v1.0.1** · UI は **简体中文 / English / 日本語** に対応、
 > 「言語」メニューから実行中に切り替え可能（設定はローカルに保存）。
 
 PolyXRD 家族成员：[PolyXRD](https://github.com/PolyXRD)（数据分析）·
@@ -100,9 +100,9 @@ build_installer.bat
 
 产物：
 
-- `dist\PolyXRD-Graphite-v1.0.0-internal.exe`（版本化归档）
+- `dist\PolyXRD-Graphite-v1.0.1-internal.exe`（版本化归档）
 - `dist\PolyXRD-Graphite-internal.exe`（最新版固定名）
-- `dist\PolyXRD-Graphite-Setup-v1.0.0.exe`（安装版）
+- `dist\PolyXRD-Graphite-Setup-v1.0.1.exe`（安装版）
 
 内部评估版的判定方式与家族一致：构建时打入 `packaging\internal_eval.marker`，
 `graphite_app._detect_variant()` 检测该文件存在与否。

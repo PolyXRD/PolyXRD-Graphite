@@ -42,7 +42,7 @@ import registration
 from i18n import tr
 
 APP_NAME = "PolyXRD Graphite"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 ORG_NAME = "PolyXRD"
 APP_ID = "Graphite"
 
@@ -389,6 +389,8 @@ class MainWindow(QMainWindow):
             QHeaderView::section { background: #eff3f8; border: none; padding: 4px 6px;
                                    font-weight: 600; color: #2a3b4f; }
             QStatusBar { background: #f4f6fa; color: #47586b; }
+            /* 内部评估版提示：状态栏居中、加粗、红色（字号沿用全局，不另设） */
+            QLabel#statusEval { color: #c62828; font-weight: 700; }
         """)
 
     # ================================================================ 计算页
@@ -855,14 +857,24 @@ class MainWindow(QMainWindow):
     def _build_statusbar(self) -> None:
         sb = self.statusBar()
         self.lb_status = QLabel("")
-        sb.addWidget(self.lb_status)
         if self._reg is not None:
+            # 安装版：消息在左，注册状态右对齐（沿用家族模块的默认排布）
+            sb.addWidget(self.lb_status)
             self._reg_label = self._reg.attach_status_label(sb, self)
         else:
+            # 内部评估版：评估提示居中于整条状态栏。
+            # 左消息与右侧等宽占位各占 stretch 1，标签夹在中间即真正居中。
+            box = QWidget()
+            lay = QHBoxLayout(box)
+            lay.setContentsMargins(4, 0, 4, 0)
+            lay.setSpacing(0)
+            lay.addWidget(self.lb_status, 1)
             self._reg_label = QLabel("")
-            self._reg_label.setObjectName("regStatusLabel")
-            self._reg_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            sb.addPermanentWidget(self._reg_label, 1)
+            self._reg_label.setObjectName("statusEval")
+            self._reg_label.setAlignment(Qt.AlignCenter)
+            lay.addWidget(self._reg_label, 0)
+            lay.addWidget(QWidget(), 1)
+            sb.addPermanentWidget(box, 1)
 
     # ================================================================ 语言
     def _retranslate(self) -> None:
