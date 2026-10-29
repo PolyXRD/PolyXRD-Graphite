@@ -102,16 +102,20 @@ PolyXRD-RutAna（TiO₂ 晶型比）· **Graphite（石墨化度 / Lc / La）**
 ## 构建
 
 ```bat
-REM 单文件内部评估版（无注册机制，状态栏显示「内部评估版本」）
+REM 内部评估版（无注册机制，状态栏显示「内部评估版本」，文件夹形态）
 build_exe.bat
 
 REM Setup 安装版（含注册机制；需 Inno Setup 6）
 build_installer.bat
+
+REM 发行时把内部评估版目录压成 zip（GitHub Release 附件）
+7z a -tzip dist\PolyXRD-Graphite-v1.2.0-internal-win64.zip PolyXRD-Graphite-v1.2.0-internal
 ```
 
 产物：
 
 - `dist\PolyXRD-Graphite-v1.2.0-internal\`（内部评估版，**文件夹**形态，整目录分发）
+- `dist\PolyXRD-Graphite-v1.2.0-internal-win64.zip`（同上，Release 附件用）
 - `dist\PolyXRD-Graphite-Setup-v1.2.0.exe`（安装版）
 - 可选单文件：`build_exe.bat onefile` → `dist\PolyXRD-Graphite-v1.2.0-internal.exe`
 
