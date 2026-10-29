@@ -117,7 +117,7 @@ REM 发行时把内部评估版目录压成 zip（GitHub Release 附件）
 - `dist\PolyXRD-Graphite-v1.2.0-internal\`（内部评估版，**文件夹**形态，整目录分发）
 - `dist\PolyXRD-Graphite-v1.2.0-internal-win64.zip`（同上，Release 附件用）
 - `dist\PolyXRD-Graphite-Setup-v1.2.0.exe`（安装版）
-- 可选单文件：`build_exe.bat onefile` → `dist\PolyXRD-Graphite-v1.2.0-internal.exe`
+- 可选单文件（便携版）：`build_exe.bat onefile` → `dist\PolyXRD-Graphite-v1.2.0-internal.exe`
 
 内部评估版默认改为 **onedir（文件夹）**：单文件版每次启动要把约 58 MB 解包到
 `%TEMP%\_MEIxxxx`，若该机 `%TEMP%` 不可写（权限不足、安全软件拦截、
