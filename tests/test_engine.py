@@ -159,6 +159,67 @@ def test_find_peaks_three_components():
     assert strong.fwhm == pytest.approx(0.212, rel=0.10)  # 高斯 σ=0.09 → FWHM=0.212
 
 
+# ---------------------------------------------------------------- 峰质心
+def test_centroid_of_symmetric_peak_matches_fit():
+    """对称峰：质心应落在峰顶（拟合峰位）上，误差 < 0.003°。"""
+    x = np.arange(25.0, 28.5, 0.004)
+    y = _pv_profile(x, 3000.0, 26.5, 0.30, 0.5) + 60.0
+    pat = E.Pattern(x, y)
+    fit = E.fit_pseudo_voigt(x[(x > 25.7) & (x < 27.3)], y[(x > 25.7) & (x < 27.3)])
+    cen = E.peak_centroid(pat, fit)
+    assert cen is not None
+    assert cen.two_theta == pytest.approx(26.5, abs=0.003)
+    assert cen.lo < 26.5 < cen.hi
+    assert cen.area > 0 and cen.points > 10
+
+
+def test_centroid_of_ka2_doublet_shifts_by_one_third():
+    """Kα2 双线（强度 2:1、间距 Δ）：质心比 Kα1 峰顶高 Δ/3（重心法定义）。"""
+    delta = 0.07
+    x = np.arange(25.0, 28.0, 0.004)
+    y = (_pv_profile(x, 2000.0, 26.50, 0.12, 0.6)
+         + _pv_profile(x, 1000.0, 26.50 + delta, 0.12, 0.6) + 50.0)
+    pat = E.Pattern(x, y)
+    fit = E.fit_pseudo_voigt(x[(x > 25.9) & (x < 27.2)], y[(x > 25.9) & (x < 27.2)])
+    cen = E.peak_centroid(pat, fit)
+    assert cen is not None
+    assert cen.two_theta == pytest.approx(26.50 + delta / 3.0, abs=0.01)
+    # 单峰拟合把未分开的双线当成一条宽峰，其中心本身也偏向 Kα2 一侧，
+    # 因此两者都高于 Kα1 峰位、且彼此相差很小（这正是未剥 Kα2 时的偏置）。
+    assert fit.two_theta > 26.50 + 0.01
+    assert abs(cen.two_theta - fit.two_theta) < 0.01
+
+
+def test_centroid_window_limited_by_neighbour():
+    """相邻峰只影响窗口范围：窗口不会跨过两峰中点。"""
+    x = np.arange(25.0, 28.0, 0.004)
+    y = (_pv_profile(x, 3000.0, 26.30, 0.15, 0.5)
+         + _pv_profile(x, 3000.0, 26.90, 0.15, 0.5) + 40.0)
+    pat = E.Pattern(x, y)
+    fit = E.fit_pseudo_voigt(x[(x > 25.9) & (x < 26.6)], y[(x > 25.9) & (x < 26.6)])
+    close = E.peak_centroid(pat, fit, neighbours=(26.90,))
+    wide = E.peak_centroid(pat, fit, neighbours=())
+    assert close is not None and wide is not None
+    assert close.hi <= 26.60 + 1e-9          # 中点 26.60
+    assert wide.hi > close.hi
+    # 对称双峰时，各自质心应落在自己那一侧
+    assert close.two_theta == pytest.approx(26.30, abs=0.02)
+
+
+def test_centroid_batch_matches_single():
+    x = np.arange(25.0, 30.0, 0.004)
+    y = np.full_like(x, 40.0)
+    for amp, cen, fw in ((9000.0, 26.42, 0.30), (1500.0, 28.44, 0.20)):
+        y = y + _pv_profile(x, amp, cen, fw, 0.6)
+    pat = E.Pattern(x, y)
+    peaks = E.find_peaks(x, y, min_height_ratio=0.01, min_distance_deg=0.5)
+    batch = E.peak_centroids(pat, peaks)
+    assert len(batch) == len(peaks)
+    for p, c in zip(peaks, batch):
+        assert c is not None
+        assert c.two_theta == pytest.approx(p.two_theta, abs=0.02)
+
+
 def test_match_instrument_peaks_on_synthetic_si():
     """合成 Si 标样谱（真实 Caglioti 展宽）→ 自动识别峰并拟合 FWHM。"""
     U, V, W = 0.015, -0.002, 0.006

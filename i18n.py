@@ -153,6 +153,16 @@ TABLE: dict[str, dict[str, str]] = {
         "pat.overview": "全谱",
         "pat.hint_marker": "标签 = 识别峰 2θ；虚线 = 理论峰位",
         "pat.show_labels": "图上标注 2θ",
+        "pat.col.centroid": "Centroid 2θ (°)",
+        "pat.show_centroid": "显示 Centroid",
+        "pat.cen_002": "质心→C(002)",
+        "pat.cen_si": "质心→Si(111)",
+        "pat.cen_name_002": "C(002)",
+        "pat.cen_name_si": "Si(111)",
+        "pat.cen_filled": "已用质心 2θ = {tt:.4f}° 填入 {name}（原拟合峰位仍保留）",
+        "pat.cen_missing": "该峰区内净强度不足，无法计算质心。",
+        "pat.centroid_tag": "质心 {tt:.4f}°",
+        "pat.centroid_tip": "质心（重心法）：扣除线性背底后，整个峰形的强度加权平均 2θ，与 MDI Jade 峰表中的 Centroid 列同一定义。",
         "pat.del_peak": "删除选中峰",
         "pat.del_ok": "已删除 2θ = {tt:.4f}° 的峰（原始谱数据不变）",
 
@@ -385,6 +395,16 @@ TABLE: dict[str, dict[str, str]] = {
         "pat.overview": "Full pattern",
         "pat.hint_marker": "Labels = fitted 2θ; dashed lines = theoretical positions",
         "pat.show_labels": "Label 2θ on plot",
+        "pat.col.centroid": "Centroid 2θ (°)",
+        "pat.show_centroid": "Show centroid",
+        "pat.cen_002": "Centroid→C(002)",
+        "pat.cen_si": "Centroid→Si(111)",
+        "pat.cen_name_002": "C(002)",
+        "pat.cen_name_si": "Si(111)",
+        "pat.cen_filled": "Centroid 2θ = {tt:.4f}° filled into {name} (fitted position untouched)",
+        "pat.cen_missing": "Net intensity in this peak window is too low to compute a centroid.",
+        "pat.centroid_tag": "centroid {tt:.4f}°",
+        "pat.centroid_tip": "Centroid (centre of gravity): intensity-weighted mean 2θ over the linear-background-subtracted profile — the same quantity as the Centroid column of MDI Jade.",
         "pat.del_peak": "Delete peak",
         "pat.del_ok": "Removed the peak at 2θ = {tt:.4f}° (raw data untouched)",
 
@@ -604,6 +624,16 @@ TABLE: dict[str, dict[str, str]] = {
         "pat.overview": "全範囲",
         "pat.hint_marker": "ラベル = 検出ピークの 2θ、破線 = 理論ピーク位置",
         "pat.show_labels": "2θ をグラフに表示",
+        "pat.col.centroid": "Centroid 2θ (°)",
+        "pat.show_centroid": "Centroid を表示",
+        "pat.cen_002": "重心→C(002)",
+        "pat.cen_si": "重心→Si(111)",
+        "pat.cen_name_002": "C(002)",
+        "pat.cen_name_si": "Si(111)",
+        "pat.cen_filled": "重心 2θ = {tt:.4f}° を {name} に入力しました（フィット峰位は保持）",
+        "pat.cen_missing": "このピーク区間の正味強度が不足し、重心を計算できません。",
+        "pat.centroid_tag": "重心 {tt:.4f}°",
+        "pat.centroid_tip": "重心（centroid）：直線バックグラウンドを差し引いたピーク全域の強度加重平均 2θ。MDI Jade の Centroid 列と同じ定義です。",
         "pat.del_peak": "選択ピークを削除",
         "pat.del_ok": "2θ = {tt:.4f}° のピークを削除しました（生データは不変）",
 
@@ -753,6 +783,27 @@ d<sub>002</sub> = c<sub>0</sub>/2）。</p>
 本工具提供 1.5405929（CODATA）与 1.54056（传统）两个 Cu Kα1 值以复现既有报告。</li>
 </ul>
 
+<h3>附：峰位的两种口径 —— 拟合峰位与质心（Centroid）</h3>
+<p>峰表里的 <b>2θ</b> 与 <b>Centroid 2θ</b> 都表示峰位，但定义不同，不能混用：</p>
+<ul>
+<li><b>2θ（拟合峰位）</b>：局部谱按「线性背底 + pseudo-Voigt」最小二乘拟合后峰顶所在的角度，
+即 Kα1 单峰的极大位置；FWHM、峰高与 Scherrer 计算都由它给出。</li>
+<li><b>Centroid 2θ（质心／重心）</b>：扣背底后<b>整个峰形</b>的强度加权平均角
+G = Σ(I<sub>i</sub> − b<sub>i</sub>)·2θ<sub>i</sub> / Σ(I<sub>i</sub> − b<sub>i</sub>)。
+定义见 NBS Technical Note 600（Pike &amp; Wilson）第 5 节「Center of Gravity Calculation, CENTROID」，
+中文教材《多晶 X 射线衍射技术与应用》第五章「重心法（矩心法）」同式；MDI Jade 寻峰／峰形拟合报告里
+的 <b>Centroid / Centroid-d</b> 列即此量。</li>
+</ul>
+<p>两者的差值来自峰形不对称与残余 Kα2：Cu Kα 未剥 Kα2 时，C(002) 质心通常比 Kα1 峰顶高
+0.02–0.05°（若双线强度 2:1、间距 Δ，质心理论上偏 Δ/3）。质心用整段峰形数据，抗噪声与抗不对称更好；
+峰顶拟合给出的 FWHM 更自洽。<b>同一批样品、同一份报告内只能用一种口径。</b></p>
+<p>做内标校正时两种口径都可用：Δ2θ = 2θ(Si,标准) − 2θ(Si,实测) 用同一口径的两个角相减，
+Kα2 这类共同偏置大部分抵消。因此本工具保留两条并列入口：「设为 C(002)／设为 Si(111)」填拟合峰位，
+「质心→C(002)／质心→Si(111)」填质心，便于对照与复现既有报告。</p>
+<p><b>质心的适用边界：</b>峰区取 ±min(4×FWHM, 到最近邻峰距离的一半)，背底取该峰拟合时同时求出的线性背底。
+峰形越孤立、越对称，质心越可靠；若峰落在强邻峰的陡拖尾上（窗口内背底变化可与峰高相比），
+质心会被拖尾污染，此时应改用拟合峰位，或先删除误判峰、缩窄窗口再算。</p>
+
 <h3>参考文献</h3>
 <ol style="font-size:12px;">
 <li>Franklin R. E. <i>Acta Crystallographica</i>, 1951, 4: 253–261.（石墨化度与层间距关系）</li>
@@ -824,6 +875,32 @@ instrumental FWHM vs 2θ.</li>
 (1.5405929 CODATA, 1.54056 traditional) to reproduce legacy reports.</li>
 </ul>
 
+<h3>Appendix: two definitions of "peak position" — fitted maximum vs centroid</h3>
+<p>Both <b>2θ</b> and <b>Centroid 2θ</b> in the peak table are peak positions, but they are different
+quantities and must not be mixed:</p>
+<ul>
+<li><b>2θ (fitted position)</b>: the maximum of a linear-background + pseudo-Voigt least-squares fit to the
+local profile — i.e. the Kα1 peak apex. FWHM, height and the Scherrer calculation all derive from it.</li>
+<li><b>Centroid 2θ</b>: the intensity-weighted mean angle of the <b>whole background-subtracted profile</b>,
+G = Σ(I<sub>i</sub> − b<sub>i</sub>)·2θ<sub>i</sub> / Σ(I<sub>i</sub> − b<sub>i</sub>). The definition follows
+NBS Technical Note 600 (Pike &amp; Wilson), section 5 “Center of Gravity Calculation, CENTROID”; the
+<b>Centroid / Centroid-d</b> column of MDI Jade's peak reports is the same quantity.</li>
+</ul>
+<p>The difference comes from profile asymmetry and residual Kα2: without Kα2 stripping, the Cu Kα centroid of
+C(002) is typically 0.02–0.05° above the Kα1 apex (for a 2:1 doublet separated by Δ, the centroid is Δ/3
+higher by construction). The centroid uses the entire profile and is more robust against noise and asymmetry,
+while the fitted apex keeps FWHM self-consistent. <b>Use one definition throughout a sample batch and a
+report.</b></p>
+<p>Either definition works for internal-standard correction: Δ2θ = 2θ(Si, ref) − 2θ(Si, obs) subtracts two
+angles obtained the same way, so common biases such as Kα2 largely cancel. Both entries are therefore kept:
+“Use as C(002) / Use as Si(111)” fill the fitted position, while “Centroid→C(002) / Centroid→Si(111)” fill the
+centroid.</p>
+<p><b>Validity limits:</b> the integration window is ±min(4×FWHM, half the distance to the nearest neighbouring
+peak) and the background is the linear one obtained in that peak's own fit. The more isolated and symmetric the
+profile, the more reliable the centroid; if the peak sits on the steep tail of a strong neighbour (background
+change across the window comparable to the peak height), the centroid is biased by that tail — use the fitted
+position instead, or delete the spurious peak and narrow the window.</p>
+
 <h3>References</h3>
 <ol style="font-size:12px;">
 <li>Franklin R. E. <i>Acta Cryst.</i> 1951, 4, 253–261.</li>
@@ -885,6 +962,28 @@ instrumental FWHM vs 2θ.</li>
 <li><b>La と Lc が不整合</b>：La に (002) を使っていないか確認。</li>
 <li><b>波長</b>：精密な位置には Kα1 を使用。Cu Kα1 は 1.5405929（CODATA）と 1.54056（従来値）を用意。</li>
 </ul>
+
+<h3>付：ピーク位置の 2 つの定義 — フィット極大と重心（Centroid）</h3>
+<p>ピーク表の <b>2θ</b> と <b>Centroid 2θ</b> はいずれもピーク位置ですが、定義が異なるため混用できません。</p>
+<ul>
+<li><b>2θ（フィット位置）</b>：局所プロファイルを「直線バックグラウンド + pseudo-Voigt」で最小二乗
+フィットした極大角（Kα1 のピーク頂点）。FWHM・高さ・Scherrer 計算はこちらを用います。</li>
+<li><b>Centroid 2θ（重心）</b>：バックグラウンドを差し引いた<b>ピーク全域</b>の強度加重平均角
+G = Σ(I<sub>i</sub> − b<sub>i</sub>)·2θ<sub>i</sub> / Σ(I<sub>i</sub> − b<sub>i</sub>)。
+定義は NBS Technical Note 600（Pike &amp; Wilson）第 5 節「Center of Gravity Calculation, CENTROID」に従い、
+MDI Jade のレポートにある <b>Centroid / Centroid-d</b> 列と同じ量です。</li>
+</ul>
+<p>差はピーク形状の非対称と残留 Kα2 に由来します。Cu Kα で Kα2 を除去していない場合、C(002) の重心は
+Kα1 極大より通常 0.02–0.05° 高角側になります（強度 2:1・間隔 Δ の二重線では重心は Δ/3 高角）。
+重心は全域を使うためノイズや非対称に強く、フィット極大は FWHM との整合性に優れます。
+<b>同一試料群・同一レポート内では一方の定義に統一してください。</b></p>
+<p>内部標準補正はいずれの定義でも成立します。Δ2θ = 2θ(Si, 標準) − 2θ(Si, 実測) は同じ定義の 2 角の差なので、
+Kα2 などの共通バイアスは大部分が相殺されます。そこで本ツールは両方の入口を用意しています
+（「C(002) に設定／Si(111) に設定」＝フィット位置、「重心→C(002)／重心→Si(111)」＝重心）。</p>
+<p><b>適用範囲：</b>積分範囲は ±min(4×FWHM, 最近接ピークまでの距離の半分)、バックグラウンドはそのピークの
+フィットで同時に求めた直線を使用します。ピークが孤立・対称なほど重心は信頼できます。強い隣接ピークの
+急峻な裾に乗っている場合（窓内のバックグラウンド変化がピーク高さに匹敵）、重心は裾に引きずられるため、
+フィット位置を用いるか、誤認ピークを削除して窓を狭めてください。</p>
 
 <h3>参考文献</h3>
 <ol style="font-size:12px;">

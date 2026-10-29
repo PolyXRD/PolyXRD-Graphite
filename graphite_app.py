@@ -43,7 +43,7 @@ import registration
 from i18n import tr
 
 APP_NAME = "PolyXRD Graphite"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 ORG_NAME = "PolyXRD"
 APP_ID = "Graphite"
 
@@ -137,13 +137,16 @@ class PlotCanvas(QWidget):
         self.gridc = QColor("#e8ecf2")
         self.curve = QColor("#0f6f9c")
         self.peak_color = QColor("#d1495b")
+        self.centroid_color = QColor("#b7791f")
         self.theory_color = QColor("#8d99ae")
         self.sel_color = QColor("#1f9d55")
         self._pattern: eng.Pattern | None = None
         self._peaks: list[eng.PeakFit] = []
         self._markers: list[tuple[float, str]] = []
         self._selected = -1
+        self._centroids: list[float | None] = []
         self.show_labels = True
+        self.show_centroid = True
         self.empty_text = ""
         self.x_label = "2θ (°)"
         self.y_label = "Intensity"
@@ -159,6 +162,11 @@ class PlotCanvas(QWidget):
 
     def set_markers(self, markers: list[tuple[float, str]]) -> None:
         self._markers = list(markers)
+        self.update()
+
+    def set_centroids(self, centroids: list[float | None]) -> None:
+        """质心 2θ 列表（与 peaks 同序；None 表示该峰算不出质心）。"""
+        self._centroids = list(centroids)
         self.update()
 
     def set_selected(self, index: int) -> None:
@@ -263,6 +271,35 @@ class PlotCanvas(QWidget):
         painter.setPen(QPen(self.curve, 1.1))
         for i in range(1, len(pts)):
             painter.drawLine(pts[i - 1], pts[i])
+
+        # 质心位置（可选）：横轴下短标记；选中峰再加一条虚线 + 数值
+        if self.show_centroid and self._centroids:
+            for cen in self._centroids:
+                if cen is None or not (xmin <= cen <= xmax):
+                    continue
+                painter.setPen(QPen(self.centroid_color, 1.4))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawLine(QPointF(tx(cen), h - mb), QPointF(tx(cen), h - mb + 5))
+            sel_c = (self._centroids[self._selected]
+                     if 0 <= self._selected < len(self._centroids) else None)
+            if sel_c is not None and xmin <= sel_c <= xmax:
+                px = tx(sel_c)
+                painter.setPen(QPen(QColor(183, 121, 31, 150), 1.0, Qt.DashLine))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawLine(QPointF(px, mt + 2), QPointF(px, h - mb))
+                painter.setFont(QFont("Consolas", 8))
+                cfm = painter.fontMetrics()
+                txt = tr("pat.centroid_tag", tt=sel_c)
+                tw = cfm.horizontalAdvance(txt) + 9.0
+                th = cfm.height() + 4.0
+                bx = min(max(px - tw / 2.0, ml + 2.0), w - mr - tw - 2.0)
+                box = QRectF(bx, h - mb - th - 4.0, tw, th)
+                painter.setPen(QPen(QColor(183, 121, 31, 170), 1.0))
+                painter.setBrush(QBrush(QColor(255, 252, 244, 240)))
+                painter.drawRoundedRect(box, 3.0, 3.0)
+                painter.setPen(self.centroid_color)
+                painter.setBrush(Qt.NoBrush)
+                painter.drawText(box, Qt.AlignCenter, txt)
 
         # 峰标注：峰顶挂 2θ 角度标签（不画小圆点）
         self._draw_peak_labels(painter, xmin, xmax, ml, mt, w, h, mr, mb, tx, ty,
@@ -444,6 +481,7 @@ class MainWindow(QMainWindow):
         # ---- 运行状态 ----
         self.pattern: eng.Pattern | None = None
         self.peaks: list[eng.PeakFit] = []
+        self.centroids: list[eng.PeakCentroid | None] = []
         self.si_pattern: eng.Pattern | None = None
         self.si_peaks: list[dict] = []
         self.caglioti: eng.CagliotiFit | None = None
@@ -846,6 +884,12 @@ class MainWindow(QMainWindow):
         self.chk_labels.setChecked(True)
         self._tr_items.append((self.chk_labels, "pat.show_labels", "text"))
         hdr.addWidget(self.chk_labels)
+        hdr.addSpacing(6)
+        self.chk_centroid = QCheckBox()
+        self.chk_centroid.setChecked(True)
+        self._tr_items.append((self.chk_centroid, "pat.show_centroid", "text"))
+        self._tr_items.append((self.chk_centroid, "pat.centroid_tip", "tooltip"))
+        hdr.addWidget(self.chk_centroid)
         hdr.addSpacing(8)
         self.lb_marker_hint = _hint()
         self.lb_marker_hint.setWordWrap(False)  # 一行显示，避免挤压峰表标题
@@ -853,7 +897,7 @@ class MainWindow(QMainWindow):
         hdr.addWidget(self.lb_marker_hint)
         bl.addLayout(hdr)
 
-        self.tbl_peaks = QTableWidget(0, 7)
+        self.tbl_peaks = QTableWidget(0, 8)
         self.tbl_peaks.verticalHeader().setVisible(False)
         self.tbl_peaks.setEditTriggers(QTableWidget.NoEditTriggers)
         self.tbl_peaks.setSelectionBehavior(QTableWidget.SelectRows)
@@ -866,9 +910,15 @@ class MainWindow(QMainWindow):
         self.btn_use002 = QPushButton(); self.btn_use002.setObjectName("ghost")
         self.btn_usela = QPushButton(); self.btn_usela.setObjectName("ghost")
         self.btn_usesi = QPushButton(); self.btn_usesi.setObjectName("ghost")
+        self.btn_cen002 = QPushButton(); self.btn_cen002.setObjectName("ghost")
+        self.btn_censi = QPushButton(); self.btn_censi.setObjectName("ghost")
+        for b in (self.btn_cen002, self.btn_censi):
+            self._tr_items.append((b, "pat.centroid_tip", "tooltip"))
         self.btn_del_peak = QPushButton(); self.btn_del_peak.setObjectName("ghost")
         for b, key in ((self.btn_use002, "pat.use_002"), (self.btn_usela, "pat.use_la"),
-                       (self.btn_usesi, "pat.use_si"), (self.btn_del_peak, "pat.del_peak")):
+                       (self.btn_usesi, "pat.use_si"),
+                       (self.btn_cen002, "pat.cen_002"), (self.btn_censi, "pat.cen_si"),
+                       (self.btn_del_peak, "pat.del_peak")):
             self._tr_items.append((b, key, "text"))
             row.addWidget(b)
         row.addStretch(1)
@@ -885,6 +935,9 @@ class MainWindow(QMainWindow):
         self.btn_use002.clicked.connect(lambda: self._use_peak("002"))
         self.btn_usela.clicked.connect(lambda: self._use_peak("la"))
         self.btn_usesi.clicked.connect(lambda: self._use_peak("si"))
+        self.chk_centroid.toggled.connect(self._toggle_centroid)
+        self.btn_cen002.clicked.connect(lambda: self._use_centroid("002"))
+        self.btn_censi.clicked.connect(lambda: self._use_centroid("si"))
         self.btn_del_peak.clicked.connect(self._delete_peak)
         # 峰表里按 Delete 等同"删除选中峰"
         QShortcut(QKeySequence.Delete, self.tbl_peaks,
@@ -1052,6 +1105,8 @@ class MainWindow(QMainWindow):
                     widget.setText(text)
                 else:
                     widget.setText(text)
+            elif kind == "tooltip":
+                widget.setToolTip(tr(key))
 
         self.tabs.setTabText(0, tr("tab.calc"))
         self.tabs.setTabText(1, tr("tab.pattern"))
@@ -1126,7 +1181,8 @@ class MainWindow(QMainWindow):
             [tr("common.name"), tr("common.value"), tr("common.unit")])
         self.tbl_peaks.setHorizontalHeaderLabels(
             [tr("pat.col.two_theta"), tr("pat.col.d"), tr("pat.col.fwhm"),
-             tr("pat.col.height"), tr("pat.col.rel"), tr("pat.col.eta"), tr("pat.col.r2")])
+             tr("pat.col.height"), tr("pat.col.rel"), tr("pat.col.eta"), tr("pat.col.r2"),
+             tr("pat.col.centroid")])
         self.tbl_si.setHorizontalHeaderLabels(
             [tr("inststd.col.hkl"), tr("inststd.col.theory"), tr("inststd.col.obs"),
              tr("inststd.col.delta"), tr("inststd.col.fwhm")])
@@ -1350,8 +1406,10 @@ class MainWindow(QMainWindow):
             return
         self.pattern = pat
         self.peaks = []
+        self.centroids = []
         self.canvas.set_pattern(pat)
         self.canvas.set_peaks([])
+        self.canvas.set_centroids([])
         self.canvas.set_selected(-1)
         self.tbl_peaks.setRowCount(0)
         lo, hi = pat.span
@@ -1414,16 +1472,27 @@ class MainWindow(QMainWindow):
                 break
         self.lb_status.setText(tr("pat.direct_ok", tt=fit.two_theta, fw=fit.fwhm))
 
+    def _refresh_centroids(self) -> None:
+        """重算全部识别峰的质心（重心法），并同步到峰表与谱图。"""
+        if self.pattern is None or not self.peaks:
+            self.centroids = []
+        else:
+            self.centroids = eng.peak_centroids(self.pattern, self.peaks)
+        self.canvas.set_centroids([c.two_theta if c else None for c in self.centroids])
+
     def _fill_peak_table(self) -> None:
         lam = self.sp_lambda.value()
+        self._refresh_centroids()
         ymax = max((p.height for p in self.peaks), default=0.0) or 1.0
         self.tbl_peaks.setRowCount(len(self.peaks))
         for i, p in enumerate(self.peaks):
             d = eng.d_from_two_theta(p.two_theta, lam)
             eta = "—" if not np.isfinite(p.eta) else f"{p.eta:.2f}"
             r2 = "—" if not np.isfinite(p.r2) else f"{p.r2:.4f}"
+            cen = self.centroids[i] if i < len(self.centroids) else None
+            ctxt = "—" if cen is None else f"{cen.two_theta:.4f}"
             vals = [f"{p.two_theta:.4f}", f"{d:.5f}", f"{p.fwhm:.4f}",
-                    f"{p.height:.0f}", f"{100.0 * p.height / ymax:.1f}", eta, r2]
+                    f"{p.height:.0f}", f"{100.0 * p.height / ymax:.1f}", eta, r2, ctxt]
             for j, v in enumerate(vals):
                 it = QTableWidgetItem(v)
                 it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -1435,6 +1504,12 @@ class MainWindow(QMainWindow):
             self.canvas.set_selected(-1)
             return
         self.canvas.set_selected(rows[0].row())
+
+    def _toggle_centroid(self, on: bool) -> None:
+        """质心显示开关：峰表 Centroid 列 + 谱图上的质心标记。"""
+        self.tbl_peaks.setColumnHidden(7, not bool(on))
+        self.canvas.show_centroid = bool(on)
+        self.canvas.update()
 
     def _toggle_peak_labels(self, on: bool) -> None:
         """图上 2θ 角度标注开关（关掉后是一张不带任何标注的干净谱图）。"""
@@ -1486,6 +1561,35 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(0)
         self._schedule_calc()
         self.lb_status.setText(tr("pat.filled", tt=peak.two_theta, fw=peak.fwhm))
+
+    def _use_centroid(self, kind: str) -> None:
+        """用选中峰的**质心** 2θ 填入计算页。
+
+        与「设为 C(002) / 设为 Si(111)」并存：那一组用 pseudo-Voigt 拟合峰位
+        （峰顶），这一组用重心法质心，两种口径都保留，便于对照与复现。
+        质心只给出峰位，C(002) 的 FWHM 仍取该峰的拟合值。
+        """
+        rows = self.tbl_peaks.selectionModel().selectedRows()
+        if not rows or rows[0].row() >= len(self.peaks):
+            QMessageBox.information(self, APP_NAME, tr("pat.no_peak"))
+            return
+        i = rows[0].row()
+        cen = self.centroids[i] if i < len(self.centroids) else None
+        if cen is None:
+            QMessageBox.information(self, APP_NAME, tr("pat.cen_missing"))
+            return
+        peak = self.peaks[i]
+        if kind == "002":
+            self.sp_tt002.setValue(cen.two_theta)
+            self.sp_fw002.setValue(peak.fwhm)
+            name = tr("pat.cen_name_002")
+        else:
+            self.chk_si.setChecked(True)
+            self.sp_si.setValue(cen.two_theta)
+            name = tr("pat.cen_name_si")
+        self.tabs.setCurrentIndex(0)
+        self._schedule_calc()
+        self.lb_status.setText(tr("pat.cen_filled", name=name, tt=cen.two_theta))
 
     # ================================================================ Si 标样
     def _open_std_pattern(self) -> None:

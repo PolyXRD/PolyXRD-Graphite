@@ -198,6 +198,39 @@ def main() -> int:
     win._do_find_peaks()          # 恢复一份完整峰表供后续步骤使用
     check(len(win.peaks) == n_before, "重新寻峰后可恢复峰表")
 
+    print("[5d] 质心（centroid）")
+    check(win.tbl_peaks.columnCount() == 8, "峰表含 Centroid 列")
+    cen_txt = win.tbl_peaks.item(0, 7).text() if win.tbl_peaks.item(0, 7) else ""
+    check(cen_txt not in ("", "—"), f"Centroid 数值已给出（{cen_txt}）")
+    check(len(win.centroids) == len(win.peaks), "质心列表与峰表同长")
+    strong_i = max(range(len(win.peaks)), key=lambda i: win.peaks[i].height)
+    c_strong = win.centroids[strong_i]
+    check(c_strong is not None and abs(c_strong.two_theta - win.peaks[strong_i].two_theta) < 0.05,
+          f"最强峰 质心 {c_strong.two_theta:.4f}° ≈ 拟合 {win.peaks[strong_i].two_theta:.4f}°")
+    win.chk_centroid.setChecked(False)
+    check(win.tbl_peaks.isColumnHidden(7), "取消勾选后隐藏 Centroid 列")
+    check(win.canvas.show_centroid is False, "取消勾选后图上不画质心标记")
+    win.chk_centroid.setChecked(True)
+    check(not win.tbl_peaks.isColumnHidden(7) and win.canvas.show_centroid, "重新勾选后恢复")
+    # 质心 → C(002)
+    win.tbl_peaks.selectRow(strong_i)
+    win.sp_tt002.setValue(0.0)
+    win.btn_cen002.click()
+    check(abs(win.sp_tt002.value() - c_strong.two_theta) < 1e-3,
+          f"质心→C(002) 填入 {win.sp_tt002.value():.4f}°")
+    check(win.sp_fw002.value() > 0, "C(002) 的 FWHM 仍取该峰拟合值")
+    # 质心 → Si(111)
+    si_i = min(range(len(win.peaks)), key=lambda i: abs(win.peaks[i].two_theta - 28.442))
+    win.tbl_peaks.selectRow(si_i)
+    win.btn_censi.click()
+    check(abs(win.sp_si.value() - win.centroids[si_i].two_theta) < 1e-3,
+          f"质心→Si(111) 填入 {win.sp_si.value():.4f}°")
+    check(win.chk_si.isChecked(), "Si 内标自动启用")
+    # 恢复拟合峰位，避免影响后续算例校验
+    win.sp_tt002.setValue(26.5584)
+    win.sp_fw002.setValue(0.24)
+    win.sp_si.setValue(28.4541)
+
     print("[6] Si 标样 → Caglioti")
     win.si_pattern = synth_si_standard()
     win._detect_si_peaks()

@@ -12,13 +12,13 @@
 提供两种发行形态：**Setup 安装版**（对外发布，含注册机制）与
 **单文件内部评估版**（免安装，内部使用，无注册机制）。
 
-> 当前版本 **v1.1.1** · 界面支持 **简体中文 / English / 日本語**，
+> 当前版本 **v1.2.0** · 界面支持 **简体中文 / English / 日本語**，
 > 通过菜单栏「语言」菜单可在软件运行中即时切换（选择记忆在本地）。
 >
-> Current version **v1.1.1** · UI available in **简体中文 / English / 日本語**,
+> Current version **v1.2.0** · UI available in **简体中文 / English / 日本語**,
 > switchable at runtime from the **Language** menu (top-right); the choice is remembered locally.
 >
-> バージョン **v1.1.1** · UI は **简体中文 / English / 日本語** に対応、
+> バージョン **v1.2.0** · UI は **简体中文 / English / 日本語** に対応、
 > 「言語」メニューから実行中に切り替え可能（設定はローカルに保存）。
 
 PolyXRD 家族成员：[PolyXRD](https://github.com/PolyXRD)（数据分析）·
@@ -44,6 +44,10 @@ PolyXRD-RutAna（TiO₂ 晶型比）· **Graphite（石墨化度 / Lc / La）**
   表头勾选框「图上标注 2θ」可一键关掉，得到一张无标注的干净谱图
 - **删除误识别峰**：峰表中选中行后按按钮「删除选中峰」（或 Delete 键），
   仅从峰表/谱图移除，不改动原始谱数据；重新「自动寻峰」可恢复
+- **质心（Centroid）**：峰表可切换显示 `Centroid 2θ`（重心法：扣背底后整个峰形的强度加权平均角，
+  与 MDI Jade 峰表 Centroid 列同一定义）；谱图横轴用琥珀色小刻度标出各峰质心位置，
+  选中峰另有虚线与数值。「质心→C(002)」「质心→Si(111)」把质心角填入计算页，
+  与原有「设为 C(002) / 设为 Si(111)」（拟合峰位）并列保留
 - **定点拟合**：石墨 (110) 强度常低于 (002) 的 5%，易被阈值滤掉；输入 2θ 即在该位置
   定向拟合，弱峰也能得到 FWHM
 - 一键把选中峰填入计算页（C(002) / La 峰 / Si(111)）
@@ -72,6 +76,7 @@ PolyXRD-RutAna（TiO₂ 晶型比）· **Graphite（石墨化度 / Lc / La）**
 | La | La = 1.84 λ / (β cosθ)，优先用 (110) | 同上；Warren, *Phys. Rev.* 1941, 59, 693（hk 带） |
 | 仪器宽化 | 高斯：β = √(βobs² − βinst²)；洛伦兹：β = βobs − βinst | 二选一，同批样品必须一致并在报告注明 |
 | β 的单位 | 输入为 °，Scherrer 内部转弧度 | — |
+| 峰质心（Centroid） | G = Σ(Iᵢ − bᵢ)·2θᵢ / Σ(Iᵢ − bᵢ)，bᵢ 为线性背底 | NBS Technical Note 600 第 5 节（Pike & Wilson）；《多晶 X 射线衍射技术与应用》第五章「重心法」；MDI Jade 峰表 Centroid 列 |
 
 **为什么 La 必须用 (110)/(100)**：La 反映石墨层内的晶畴尺寸，需 hk0 型反射。(002)
 给出的是层堆叠方向（Lc），不能用来算 La。72–82° 的 (110) 峰角度高、同一 Δd 对应的
@@ -106,9 +111,14 @@ build_installer.bat
 
 产物：
 
-- `dist\PolyXRD-Graphite-v1.1.1-internal.exe`（版本化归档）
-- `dist\PolyXRD-Graphite-internal.exe`（最新版固定名）
-- `dist\PolyXRD-Graphite-Setup-v1.1.1.exe`（安装版）
+- `dist\PolyXRD-Graphite-v1.2.0-internal\`（内部评估版，**文件夹**形态，整目录分发）
+- `dist\PolyXRD-Graphite-Setup-v1.2.0.exe`（安装版）
+- 可选单文件：`build_exe.bat onefile` → `dist\PolyXRD-Graphite-v1.2.0-internal.exe`
+
+内部评估版默认改为 **onedir（文件夹）**：单文件版每次启动要把约 58 MB 解包到
+`%TEMP%\_MEIxxxx`，若该机 `%TEMP%` 不可写（权限不足、安全软件拦截、
+TEMP 被指向不存在的目录）就会弹出 `Error: Could not create temporary directory!`
+直接退出；folder 版不解包，启动更快，也不依赖 `%TEMP%`。
 
 内部评估版的判定方式与家族一致：构建时打入 `packaging\internal_eval.marker`，
 `graphite_app._detect_variant()` 检测该文件存在与否。
@@ -148,6 +158,17 @@ d002 = 0.33551 nm、g ≈ 98.8%（波长取传统值 1.54056 时为 98.8%，取 
 1.5405929 时为 98.7%，差异全部来自波长取值）。
 
 ## 版本记录
+
+**v1.2.0**（2026-10-29）
+- 新增**峰质心（Centroid）**：按重心法 G = Σ(I−b)·2θ/Σ(I−b)，扣背底取该峰拟合时的线性背底，
+  窗口为 ±min(4×FWHM, 到最近邻峰距离的一半)；峰表新增可切换的 `Centroid 2θ` 列，
+  谱图横轴加琥珀色质心刻度，选中峰显示虚线与「质心 xx°」标签
+- 新增「质心→C(002)」「质心→Si(111)」按钮：把质心角填入计算页参与石墨化度计算；
+  原「设为 C(002) / 设为 La 峰 / 设为 Si(111)」（拟合峰位）保留，两种口径并列对照
+- 计算内核新增 `peak_centroid()` / `peak_centroids()`，`PeakFit` 记录拟合背底 (bg_slope, bg_intercept)
+- 方法页新增「峰位的两种口径 —— 拟合峰位与质心」一节（三语），说明定义、出处、Kα2 偏置与适用边界
+- **修复**：内部评估版单文件启动报 `Could not create temporary directory!` —— 构建默认改为
+  onedir 文件夹形态（不再解包到 %TEMP%），单文件改为 `build_exe.bat onefile` 可选
 
 **v1.1.1**（2026-10-29）
 - 谱图区重做峰标注：去掉峰位小红点，改为在峰顶挂出拟合 2θ 角度标签（引线 + 圆角标签），

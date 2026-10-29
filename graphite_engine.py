@@ -437,6 +437,8 @@ class PeakFit:
     r2: float                 # 拟合优度
     two_theta_raw: float = 0.0  # 未细化时的原始峰位
     d: float = 0.0            # 面间距（nm，需外部按波长回填）
+    bg_slope: float = 0.0     # 拟合时同时求出的线性背底斜率
+    bg_intercept: float = 0.0  # 线性背底截距（与 bg_slope 一起用于质心扣背底）
 
 
 def fit_pseudo_voigt(x: np.ndarray, y: np.ndarray,
@@ -515,7 +517,8 @@ def fit_pseudo_voigt(x: np.ndarray, y: np.ndarray,
     # 面积：pseudo-Voigt 解析面积 = amp * fwhm * (η·π/2 + (1-η)·√(π/4ln2))
     area = amp * fw * (eta * math.pi / 2.0 + (1.0 - eta) * math.sqrt(math.pi / (4.0 * math.log(2.0))))
     return PeakFit(two_theta=cen, fwhm=fw, height=amp, area=area,
-                   eta=eta, r2=float(r2), two_theta_raw=center0)
+                   eta=eta, r2=float(r2), two_theta_raw=center0,
+                   bg_slope=bb0, bg_intercept=bb1)
 
 
 def _fwhm_direct(x: np.ndarray, yd: np.ndarray) -> float:
@@ -562,8 +565,11 @@ def _fallback_fit(x: np.ndarray, yd: np.ndarray, base: np.ndarray) -> PeakFit:
     fw = _fwhm_direct(x, yd)
     amp = float(yd[i])
     area = amp * fw * 0.9
+    span = float(x[-1] - x[0]) or 1.0
+    slope = float((base[-1] - base[0]) / span)
     return PeakFit(two_theta=cen, fwhm=fw, height=amp, area=area,
-                   eta=float("nan"), r2=float("nan"), two_theta_raw=float(x[i]))
+                   eta=float("nan"), r2=float("nan"), two_theta_raw=float(x[i]),
+                   bg_slope=slope, bg_intercept=float(base[0] - slope * x[0]))
 
 
 def find_peaks(x: np.ndarray, y: np.ndarray,
@@ -671,6 +677,114 @@ def estimate_noise(y: np.ndarray) -> float:
     d2 = np.diff(y, 2)
     mad = float(np.median(np.abs(d2 - np.median(d2))))
     return mad * 1.4826 / math.sqrt(6.0)
+
+
+# ------------------------------------------------------------------------------
+# 峰质心（centroid / centre of gravity）—— 对应 MDI Jade 峰表的 Centroid 列
+# ------------------------------------------------------------------------------
+@dataclass(frozen=True)
+class PeakCentroid:
+    """单峰质心结果（背景线性扣除后、峰区内的强度加权平均 2θ）。"""
+    two_theta: float        # 质心 2θ（°）
+    lo: float               # 质心积分下限（°）
+    hi: float               # 质心积分上限（°）
+    area: float             # 峰区净积分强度（强度·°，等价 Jade 的 Area）
+    points: int             # 参与积分的点数
+
+
+def peak_centroid(pattern: "Pattern", peak: PeakFit,
+                  neighbours: Iterable[float] = (),
+                  span_fwhm: float = 4.0,
+                  edge_frac: float = 0.25,
+                  min_points: int = 9) -> PeakCentroid | None:
+    """按重心法（centre of gravity / centroid）计算单峰峰位。
+
+    定义与出处
+    ----------
+    质心是除去背底后**整个峰形的强度加权平均角**：
+
+        G = Σ (I_i − b_i)·(2θ_i) / Σ (I_i − b_i)
+
+    * Pike & Wilson 的重心公式见 NBS Technical Note 600（*Corrections and
+      Calculations on an X-ray Diffraction Line Profile*）第 5 节
+      “Center of Gravity Calculation, CENTROID”，其中 b_i 为峰区两端的线性背底；
+    * 中文教材《多晶 X 射线衍射技术与应用》第 5 章「重心法（矩心法）」给出同一式，
+      并指出重心法用整个峰形的数据定峰位，受峰形不对称、噪声与重叠的干扰小、
+      重复性好，且各因素引起的重心位移可线性相加；
+    * MDI Jade 寻峰/峰形拟合报告中给出的 **Centroid / Centroid-d** 即此量
+      （Jade 手册与实操教程中，「Centroid-d」与「Area(Counts)」并列输出）。
+
+    与拟合峰位的区别：拟合 2θ 是峰顶（Kα1 单峰的极大）位置；质心是峰形面积的
+    平衡点，峰形不对称或残留 Kα2 时两者不相等（Cu Kα 下 C(002) 通常差 0.02–0.05°）。
+    掺内标做 Δ2θ 校正时两者同源偏置近似抵消，故质心同样适用于石墨化度计算。
+
+    窗口与背底（本实现的约定，界面上会注明）
+    ----------------------------------------
+    * 窗口以拟合峰位为中心、**左右对称**：半宽取 min(span_fwhm×FWHM,
+      到最近相邻峰距离的一半)，并收缩到数据范围内，避免窗口一侧跨进邻峰而把
+      质心拽偏；
+    * 背底取窗口两端各 ``edge_frac`` 段内强度的 10% 分位值连成直线
+      （分位值而非均值，可避免窗口边缘正好落在邻峰斜坡上时把背底抬得过高）；
+    * 净强度 ≤ 0 的点权重记 0（等价于负值截零）。
+
+    Returns:
+        PeakCentroid；窗口内净强度不足时返回 None。
+    """
+    x = np.asarray(pattern.two_theta, dtype=float)
+    y = np.asarray(pattern.intensity, dtype=float)
+    if x.size < min_points:
+        return None
+    fw = float(peak.fwhm) if np.isfinite(peak.fwhm) and peak.fwhm > 0 else 0.2
+    dx = float(np.abs(np.diff(x)).mean()) if x.size > 1 else 0.01
+    cen0 = float(peak.two_theta)
+    half = span_fwhm * fw
+    for other in neighbours:                     # 只走到最近邻峰的一半处
+        d = abs(float(other) - cen0)
+        if d > 1e-6:
+            half = min(half, 0.5 * d)
+    half = min(half, cen0 - float(x.min()), float(x.max()) - cen0)  # 保持左右对称
+    half = max(half, 8.0 * dx)
+    lo = max(cen0 - half, float(x.min()))
+    hi = min(cen0 + half, float(x.max()))
+    m = (x >= lo) & (x <= hi)
+    xs, ys = x[m], y[m]
+    if xs.size < min_points:
+        return None
+
+    # 背底：优先用拟合时同时求出的线性背底（与该峰的峰形参数自洽，
+    # 且能跟随相邻强峰的曲线形拖尾）；摊底拟合没有背底参数时，
+    # 退回窗口两端各 edge_frac 段 10% 分位的连线。
+    if abs(peak.bg_slope) > 0 or abs(peak.bg_intercept) > 0:
+        net = ys - (peak.bg_slope * xs + peak.bg_intercept)
+    else:
+        k = max(2, int(xs.size * edge_frac))
+        x_l, y_l = float(np.mean(xs[:k])), float(np.percentile(ys[:k], 10))
+        x_r, y_r = float(np.mean(xs[-k:])), float(np.percentile(ys[-k:], 10))
+        if x_r - x_l > 1e-9:
+            net = ys - (y_l + (y_r - y_l) * (xs - x_l) / (x_r - x_l))
+        else:
+            net = ys - min(y_l, y_r)
+    w = net > 0.0                                # 与"负值截零"等价，权重为零
+    if int(w.sum()) < max(3, min_points // 2):
+        return None
+    den = float(net[w].sum())
+    if not np.isfinite(den) or den <= 0.0:
+        return None
+    cen = float(np.sum(xs[w] * net[w]) / den)
+    return PeakCentroid(two_theta=cen, lo=lo, hi=hi,
+                        area=den * dx, points=int(w.sum()))
+
+
+def peak_centroids(pattern: "Pattern",
+                   peaks: Iterable[PeakFit]) -> list[PeakCentroid | None]:
+    """批量求质心（相邻峰位自动参与窗口裁剪）。"""
+    peaks = list(peaks)
+    centres = [float(p.two_theta) for p in peaks]
+    out: list[PeakCentroid | None] = []
+    for i, p in enumerate(peaks):
+        others = centres[:i] + centres[i + 1:]
+        out.append(peak_centroid(pattern, p, neighbours=others))
+    return out
 
 
 def match_instrument_peaks(pattern: Pattern, wavelength_nm: float,                           a: float = SI_A,
@@ -960,6 +1074,18 @@ def _selfcheck() -> None:
     fit = fit_caglioti([(28.44, 0.10), (47.30, 0.12), (56.12, 0.14), (76.38, 0.18)])
     print(f"  Caglioti 自检：{fit.as_text()}")
     print(f"  外推 26.55° → {fit.fwhm(26.55):.4f}°")
+
+    print("\n== 峰质心（centroid）自检 ==")
+    xx = np.arange(25.0, 28.0, 0.004)
+    yy = 40.0 + _pseudo_voigt(xx, 3000.0, 26.5, 0.35, 0.5)
+    pat = Pattern(xx, yy)
+    pf = fit_pseudo_voigt(xx[(xx >= 25.8) & (xx <= 27.2)], yy[(xx >= 25.8) & (xx <= 27.2)])
+    cen = peak_centroid(pat, pf)
+    if cen is None:
+        print("  质心计算失败")
+    else:
+        print(f"  对称峰 26.500° → 拟合 {pf.two_theta:.4f}° / 质心 {cen.two_theta:.4f}° "
+              f"（窗口 {cen.lo:.2f}–{cen.hi:.2f}°, {cen.points} 点）")
 
 
 if __name__ == "__main__":
