@@ -181,6 +181,23 @@ def main() -> int:
     check(abs(la_fit.two_theta - 77.504) < 0.05, f"定点拟合峰位 = {la_fit.two_theta:.4f}°")
     check(abs(la_fit.fwhm - 0.34) < 0.03, f"定点拟合 FWHM = {la_fit.fwhm:.4f}°")
 
+    print("[5c] 峰角度标注与删除峰")
+    check(win.chk_labels.isChecked() and win.canvas.show_labels, "默认在图上标注峰角度")
+    win.chk_labels.setChecked(False)
+    win.canvas.repaint()
+    flips = [p.two_theta for p in win.peaks]
+    check(win.canvas.show_labels is False and len(flips) > 0, "关标注后画布仍正常绘制")
+    win.chk_labels.setChecked(True)
+    win.canvas.repaint()
+    check(win.canvas.show_labels is True, "重新开启标注")
+    n_before = len(win.peaks)
+    win.tbl_peaks.selectRow(0)
+    win._delete_peak()
+    check(len(win.peaks) == n_before - 1, f"删除选中峰（{n_before} → {len(win.peaks)}）")
+    check(win.tbl_peaks.rowCount() == len(win.peaks), "峰表与峰列表同步")
+    win._do_find_peaks()          # 恢复一份完整峰表供后续步骤使用
+    check(len(win.peaks) == n_before, "重新寻峰后可恢复峰表")
+
     print("[6] Si 标样 → Caglioti")
     win.si_pattern = synth_si_standard()
     win._detect_si_peaks()

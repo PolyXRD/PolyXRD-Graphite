@@ -18,7 +18,7 @@
 #define MyAppExeName "PolyXRD-Graphite.exe"
 
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.1.1"
 #endif
 
 [Setup]

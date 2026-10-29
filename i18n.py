@@ -151,7 +151,10 @@ TABLE: dict[str, dict[str, str]] = {
         "pat.empty": "载入谱图后点「自动寻峰」；峰位与 FWHM 由 pseudo-Voigt 拟合给出。",
         "pat.filled": "已把 2θ = {tt:.4f}°、FWHM = {fw:.4f}° 填入计算页。",
         "pat.overview": "全谱",
-        "pat.hint_marker": "红点 = 识别峰；虚线 = C(002) / (110) / (100) 理论位置",
+        "pat.hint_marker": "标签 = 识别峰 2θ；虚线 = 理论峰位",
+        "pat.show_labels": "图上标注 2θ",
+        "pat.del_peak": "删除选中峰",
+        "pat.del_ok": "已删除 2θ = {tt:.4f}° 的峰（原始谱数据不变）",
 
         # ---- Si 标样页 ----
         "inststd.open": "打开 Si 标样谱…",
@@ -380,7 +383,10 @@ TABLE: dict[str, dict[str, str]] = {
         "pat.empty": "Load a pattern and press Find peaks; positions and FWHM come from pseudo-Voigt fits.",
         "pat.filled": "Filled 2θ = {tt:.4f}°, FWHM = {fw:.4f}° into the calculation tab.",
         "pat.overview": "Full pattern",
-        "pat.hint_marker": "Red dots = detected peaks; dashed lines = theoretical C(002) / (110) / (100)",
+        "pat.hint_marker": "Labels = fitted 2θ; dashed lines = theoretical positions",
+        "pat.show_labels": "Label 2θ on plot",
+        "pat.del_peak": "Delete peak",
+        "pat.del_ok": "Removed the peak at 2θ = {tt:.4f}° (raw data untouched)",
 
         "inststd.open": "Open Si standard pattern…",
         "inststd.auto": "Detect Si peaks",
@@ -596,7 +602,10 @@ TABLE: dict[str, dict[str, str]] = {
         "pat.empty": "パターンを読み込み「ピーク探索」を押してください。位置と FWHM は pseudo-Voigt で算出します。",
         "pat.filled": "2θ = {tt:.4f}°、FWHM = {fw:.4f}° を計算タブに反映しました。",
         "pat.overview": "全範囲",
-        "pat.hint_marker": "赤点 = 検出ピーク、破線 = C(002) / (110) / (100) の理論位置",
+        "pat.hint_marker": "ラベル = 検出ピークの 2θ、破線 = 理論ピーク位置",
+        "pat.show_labels": "2θ をグラフに表示",
+        "pat.del_peak": "選択ピークを削除",
+        "pat.del_ok": "2θ = {tt:.4f}° のピークを削除しました（生データは不変）",
 
         "inststd.open": "Si 標準パターンを開く…",
         "inststd.auto": "Si ピークを認識",

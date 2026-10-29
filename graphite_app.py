@@ -20,14 +20,15 @@
 from __future__ import annotations
 
 import datetime as _dt
+import math
 import sys
 from pathlib import Path
 
 import numpy as np
 
-from PySide6.QtCore import QPointF, QSettings, Qt, QTimer
-from PySide6.QtGui import (QAction, QActionGroup, QBrush, QColor, QFont,
-                           QIcon, QPainter, QPen, QPixmap)
+from PySide6.QtCore import QPointF, QRectF, QSettings, Qt, QTimer
+from PySide6.QtGui import (QAction, QActionGroup, QBrush, QColor, QFont, QIcon,
+                           QKeySequence, QPainter, QPen, QPixmap, QShortcut)
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
     QFrame, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
@@ -42,7 +43,7 @@ import registration
 from i18n import tr
 
 APP_NAME = "PolyXRD Graphite"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.1.1"
 ORG_NAME = "PolyXRD"
 APP_ID = "Graphite"
 
@@ -77,10 +78,52 @@ def variant_name() -> str:
 
 
 # ------------------------------------------------------------------------------
+# 坐标轴刻度：取 1 / 2 / 2.5 / 5 ×10^k 的"整"步长
+# ------------------------------------------------------------------------------
+def _nice_step(span: float, target: int = 5) -> float:
+    """按目标格数给出规整步长（1、2、2.5、5 的 10 次幂倍）。"""
+    if not np.isfinite(span) or span <= 0:
+        return 1.0
+    raw = span / max(int(target), 1)
+    mag = 10.0 ** math.floor(math.log10(raw))
+    for mult in (1.0, 2.0, 2.5, 5.0, 10.0):
+        if raw <= mult * mag:
+            return mult * mag
+    return 10.0 * mag
+
+
+def _nice_ticks(lo: float, hi: float, target: int = 5) -> list[float]:
+    """返回落在 [lo, hi] 内的规整刻度序列。"""
+    if not (np.isfinite(lo) and np.isfinite(hi)) or hi <= lo:
+        return [lo]
+    step = _nice_step(hi - lo, target)
+    v = math.ceil(lo / step - 1e-9) * step
+    out: list[float] = []
+    while v <= hi + step * 1e-6 and len(out) < 40:
+        out.append(round(v, 10))
+        v += step
+    return out or [lo]
+
+
+def _tick_decimals(values: list[float]) -> int:
+    """刻度标签小数位：步长 ≥1 取整数，≥0.1 取 1 位，否则 2 位。"""
+    if len(values) < 2:
+        return 0
+    step = abs(values[1] - values[0])
+    if step >= 1 - 1e-9:
+        return 0
+    return 1 if step >= 0.1 - 1e-9 else 2
+
+
+# ------------------------------------------------------------------------------
 # 轻量绘图（QPainter，无 matplotlib 依赖）
 # ------------------------------------------------------------------------------
 class PlotCanvas(QWidget):
-    """2θ–强度谱图绘制：曲线 + 识别峰标记 + 理论峰位虚线 + 选中峰高亮。
+    """2θ–强度谱图绘制：曲线 + 识别峰 2θ 标签 + 理论峰位虚线 + 选中峰高亮。
+
+    识别峰不再画小圆点，改为在峰顶用引线挂一枚角度标签（``26.417°``）：
+    峰多时标签按「正上方 → 右上 → 左上 → 抬高一层」的顺序自动避让，
+    并收敛在绘图区内，避免压到边框或其他标签。
 
     大数据量按像素分箱抽稀（保留每箱极值），保证数万点谱拖动时不卡顿。
     """
@@ -100,6 +143,7 @@ class PlotCanvas(QWidget):
         self._peaks: list[eng.PeakFit] = []
         self._markers: list[tuple[float, str]] = []
         self._selected = -1
+        self.show_labels = True
         self.empty_text = ""
         self.x_label = "2θ (°)"
         self.y_label = "Intensity"
@@ -139,7 +183,17 @@ class PlotCanvas(QWidget):
         y = self._pattern.intensity
         xmin, xmax = float(x.min()), float(x.max())
         ymin = min(0.0, float(y.min()))
-        ymax = float(y.max()) * 1.06 or 1.0
+        # 顶部按"固定像素"预留峰角度标签的位置：不论画布多高，最高峰的标签
+        # 都能放在峰顶正上方，不会被上边框裁掉；画布过矮时退回 6% 余量。
+        px_h = float(h - mt - mb)
+        # 只在有峰角度标签时才预留顶部空间（关掉标注后让曲线吃满画布）
+        reserve = 34.0 if (self.show_labels and self._peaks) else 8.0
+        span = float(y.max()) - ymin
+        if span > 0 and px_h > reserve * 2.5:
+            # 预留空间按像素给，避免"最高峰标签被顶出画布"随窗口高度漂移
+            ymax = ymin + span * px_h / (px_h - reserve)
+        else:
+            ymax = float(y.max()) * 1.06 or 1.0
         if xmax <= xmin:
             xmax = xmin + 1.0
         if ymax <= ymin:
@@ -151,20 +205,25 @@ class PlotCanvas(QWidget):
         def ty(v: float) -> float:
             return h - mb - (v - ymin) / (ymax - ymin) * (h - mt - mb)
 
-        # 网格与刻度
+        # 网格与刻度（2θ 取规整步长，强度取整刻度）
         painter.setFont(QFont("Consolas", 8))
-        for i in range(6):
-            gx = xmin + (xmax - xmin) * i / 5.0
+        xticks = _nice_ticks(xmin, xmax, 5)
+        yticks = _nice_ticks(ymin, ymax, 5)
+        xdec = _tick_decimals(xticks)
+        ydec = _tick_decimals(yticks)
+        for gx in xticks:
             painter.setPen(QPen(self.gridc, 1))
             painter.drawLine(QPointF(tx(gx), mt), QPointF(tx(gx), h - mb))
             painter.setPen(self.axis)
-            painter.drawText(int(tx(gx)) - 16, h - mb + 15, f"{gx:.0f}")
-        for i in range(5):
-            gy = ymin + (ymax - ymin) * i / 4.0
+            bx = min(max(tx(gx) - 24.0, 0.0), w - 48.0)  # 贴边刻度不越出控件
+            painter.drawText(QRectF(bx, h - mb + 4.0, 48.0, 14.0),
+                             Qt.AlignHCenter | Qt.AlignTop, f"{gx:.{xdec}f}")
+        for gy in yticks:
             painter.setPen(QPen(self.gridc, 1))
             painter.drawLine(QPointF(ml, ty(gy)), QPointF(w - mr, ty(gy)))
             painter.setPen(self.axis)
-            painter.drawText(4, int(ty(gy)) + 4, f"{gy:.0f}")
+            painter.drawText(QRectF(2.0, ty(gy) - 7.0, ml - 9.0, 14.0),
+                             Qt.AlignRight | Qt.AlignVCenter, f"{gy:.{ydec}f}")
 
         painter.setPen(QPen(self.axis, 1.2))
         painter.drawRect(ml, mt, w - ml - mr, h - mt - mb)
@@ -173,16 +232,31 @@ class PlotCanvas(QWidget):
         painter.setFont(QFont("Segoe UI", 7))
         painter.drawText(ml, mt - 8, self.y_label)
 
-        # 理论峰位虚线
+        # 理论峰位虚线（顶部小标签同时记入障碍区，峰角度标签会绕开它）
+        obstacles: list[QRectF] = []
         if self._markers:
-            pen = QPen(self.theory_color, 1, Qt.DashLine)
-            painter.setPen(pen)
+            painter.setFont(QFont("Segoe UI", 7))
+            mfm = painter.fontMetrics()
             for tt, label in self._markers:
                 if not (xmin <= tt <= xmax):
                     continue
+                painter.setPen(QPen(self.theory_color, 1, Qt.DashLine))
+                painter.setBrush(Qt.NoBrush)
                 painter.drawLine(QPointF(tx(tt), mt + 4), QPointF(tx(tt), h - mb))
-                painter.setFont(QFont("Segoe UI", 7))
-                painter.drawText(int(tx(tt)) + 2, mt + 12, label)
+                # 顶部用浅底小标签压住网格，避免与刻度线混杂
+                tw = mfm.horizontalAdvance(label) + 6
+                th = mfm.height()
+                lx = tx(tt) + 3
+                if lx + tw > w - mr - 2:
+                    lx = tx(tt) - 3 - tw
+                box = QRectF(lx, mt + 4, tw, th)
+                obstacles.append(box)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QBrush(QColor(255, 255, 255, 225)))
+                painter.drawRect(box)
+                painter.setPen(self.theory_color)
+                painter.setBrush(Qt.NoBrush)
+                painter.drawText(box, Qt.AlignCenter, label)
 
         # 曲线（按像素分箱抽稀）
         pts = self._decimate(x, y, w, ml, mr, tx, ty)
@@ -190,24 +264,98 @@ class PlotCanvas(QWidget):
         for i in range(1, len(pts)):
             painter.drawLine(pts[i - 1], pts[i])
 
-        # 峰标记
-        if self._peaks:
-            painter.setBrush(QBrush(self.peak_color))
-            for k, p in enumerate(self._peaks):
-                if not (xmin <= p.two_theta <= xmax):
-                    continue
-                cx, cy = tx(p.two_theta), ty(p.height + 0.0)
-                if k == self._selected:
-                    painter.setPen(QPen(self.sel_color, 1.6))
-                    painter.setBrush(QBrush(QColor(31, 157, 85, 60)))
-                    painter.drawEllipse(QPointF(cx, cy), 6.0, 6.0)
-                    painter.setBrush(QBrush(self.sel_color))
-                    painter.drawEllipse(QPointF(cx, cy), 2.6, 2.6)
-                    painter.setBrush(QBrush(self.peak_color))
-                else:
-                    painter.setPen(Qt.NoPen)
-                    painter.drawEllipse(QPointF(cx, cy), 3.0, 3.0)
+        # 峰标注：峰顶挂 2θ 角度标签（不画小圆点）
+        self._draw_peak_labels(painter, xmin, xmax, ml, mt, w, h, mr, mb, tx, ty,
+                               obstacles)
         painter.end()
+
+    def _draw_peak_labels(self, painter, xmin, xmax, ml, mt, w, h, mr, mb, tx, ty,
+                          obstacles=()):
+        """在识别峰顶标注 2θ 角度：细引线 + 圆角标签，自动避让、不越界。
+
+        落位策略（选中峰优先，其余按 2θ 递增，保证结果稳定不跳动）：
+        正上方 → 逐级抬高 → 右上 / 左上 逐级抬高 → 左右同高（峰顶已贴近上边框时用）。
+        峰距很近时靠"逐级抬高"把标签叠成阶梯，而不是互相压字；
+        顶部理论峰位的小标签也计入障碍区，峰标签不会盖住它。
+        """
+        if not self.show_labels or not self._peaks:
+            return
+        plot = QRectF(ml + 3.0, mt + 3.0, w - ml - mr - 6.0, h - mt - mb - 6.0)
+        lab_font = QFont("Consolas")
+        lab_font.setPointSizeF(8.5)
+        painter.setFont(lab_font)
+        fm = painter.fontMetrics()
+        gap, pad = 11.0, 2.5
+        placed: list[QRectF] = list(obstacles)
+
+        order = sorted(range(len(self._peaks)), key=lambda i: self._peaks[i].two_theta)
+        if 0 <= self._selected < len(self._peaks):
+            order.sort(key=lambda i: 0 if i == self._selected else 1)
+
+        for k in order:
+            p = self._peaks[k]
+            if not (xmin <= p.two_theta <= xmax):
+                continue
+            cx, cy = tx(p.two_theta), ty(p.height)
+            txt = f"{p.two_theta:.3f}°"
+            lw = fm.horizontalAdvance(txt) + 12.0
+            lh = fm.height() + 4.0
+            step = lh + 3.0
+            candidates: list[tuple[float, float]] = []
+            for s in range(5):                              # 正上方，逐级抬高
+                candidates.append((cx - lw / 2.0, cy - gap - lh - s * step))
+            for s in range(3):                              # 右上
+                candidates.append((cx + 8.0, cy - gap * 0.4 - lh - s * step))
+            for s in range(3):                              # 左上
+                candidates.append((cx - lw - 8.0, cy - gap * 0.4 - lh - s * step))
+            for dy in (0.0, -lh - 4.0):                     # 右侧同高 / 左侧同高
+                candidates.append((cx + 8.0, cy - lh / 2.0 + dy))
+                candidates.append((cx - lw - 8.0, cy - lh / 2.0 + dy))
+            rect = None
+            for lx, ly in candidates:
+                r = QRectF(lx, ly, lw, lh)
+                if not plot.contains(r):
+                    continue
+                if any(r.adjusted(-pad, -pad, pad, pad).intersects(q) for q in placed):
+                    continue
+                rect = r
+                break
+            if rect is None:  # 兜底：贴着峰顶并夹在绘图区内
+                rect = QRectF(min(max(cx - lw / 2.0, plot.left()), plot.right() - lw),
+                              max(cy - gap - lh, plot.top()), lw, lh)
+            placed.append(rect)
+
+            is_sel = (k == self._selected)
+            if is_sel:
+                line_col, box_col = self.sel_color, QColor("#ffffff")
+            else:
+                line_col, box_col = QColor(209, 73, 91, 140), QColor("#b03a49")
+
+            # 引线：峰顶 → 标签最近的边（上方=竖线，侧方=横线）
+            if rect.bottom() <= cy + 1.0:                   # 标签在峰顶上方
+                ax = min(max(cx, rect.left() + 3.0), rect.right() - 3.0)
+                ay = rect.bottom()
+            elif rect.top() >= cy - 1.0:                    # 标签在峰顶下方
+                ax = min(max(cx, rect.left() + 3.0), rect.right() - 3.0)
+                ay = rect.top()
+            else:                                           # 标签在峰顶侧方
+                ax = rect.left() if rect.center().x() > cx else rect.right()
+                ay = min(max(cy, rect.top() + 3.0), rect.bottom() - 3.0)
+            painter.setPen(QPen(line_col, 1.0))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawLine(QPointF(cx, cy), QPointF(ax, ay))
+
+            if is_sel:
+                painter.setPen(QPen(self.sel_color, 1.2))
+                painter.setBrush(QBrush(self.sel_color))
+            else:
+                painter.setPen(QPen(QColor(209, 73, 91, 110), 1.0))
+                painter.setBrush(QBrush(QColor(255, 255, 255, 236)))
+            painter.drawRoundedRect(rect, 3.0, 3.0)
+
+            painter.setPen(box_col)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawText(rect, Qt.AlignCenter, txt)
 
     def _decimate(self, x, y, w, ml, mr, tx, ty):
         """按像素列取 min/max，避免数万点逐点 drawLine。"""
@@ -694,7 +842,13 @@ class MainWindow(QMainWindow):
         self._tr_items.append((self.lb_peaks, "pat.peaks", "text"))
         hdr.addWidget(self.lb_peaks)
         hdr.addStretch(1)
+        self.chk_labels = QCheckBox()
+        self.chk_labels.setChecked(True)
+        self._tr_items.append((self.chk_labels, "pat.show_labels", "text"))
+        hdr.addWidget(self.chk_labels)
+        hdr.addSpacing(8)
         self.lb_marker_hint = _hint()
+        self.lb_marker_hint.setWordWrap(False)  # 一行显示，避免挤压峰表标题
         self._tr_items.append((self.lb_marker_hint, "pat.hint_marker", "text"))
         hdr.addWidget(self.lb_marker_hint)
         bl.addLayout(hdr)
@@ -712,8 +866,9 @@ class MainWindow(QMainWindow):
         self.btn_use002 = QPushButton(); self.btn_use002.setObjectName("ghost")
         self.btn_usela = QPushButton(); self.btn_usela.setObjectName("ghost")
         self.btn_usesi = QPushButton(); self.btn_usesi.setObjectName("ghost")
+        self.btn_del_peak = QPushButton(); self.btn_del_peak.setObjectName("ghost")
         for b, key in ((self.btn_use002, "pat.use_002"), (self.btn_usela, "pat.use_la"),
-                       (self.btn_usesi, "pat.use_si")):
+                       (self.btn_usesi, "pat.use_si"), (self.btn_del_peak, "pat.del_peak")):
             self._tr_items.append((b, key, "text"))
             row.addWidget(b)
         row.addStretch(1)
@@ -726,9 +881,14 @@ class MainWindow(QMainWindow):
         self.btn_find.clicked.connect(self._do_find_peaks)
         self.btn_direct.clicked.connect(self._fit_at_direct)
         self.tbl_peaks.itemSelectionChanged.connect(self._on_peak_selected)
+        self.chk_labels.toggled.connect(self._toggle_peak_labels)
         self.btn_use002.clicked.connect(lambda: self._use_peak("002"))
         self.btn_usela.clicked.connect(lambda: self._use_peak("la"))
         self.btn_usesi.clicked.connect(lambda: self._use_peak("si"))
+        self.btn_del_peak.clicked.connect(self._delete_peak)
+        # 峰表里按 Delete 等同"删除选中峰"
+        QShortcut(QKeySequence.Delete, self.tbl_peaks,
+                  context=Qt.WidgetShortcut, activated=self._delete_peak)
         return page
 
     # ================================================================ Si 标样页
@@ -997,9 +1157,9 @@ class MainWindow(QMainWindow):
             self.sp_si_ref.blockSignals(False)
         try:
             ref = eng.graphite_reference_table(lam)
-            self.canvas.set_markers([(ref["002"]["two_theta"], "002"),
-                                     (ref["100"]["two_theta"], "100"),
-                                     (ref["110"]["two_theta"], "110")])
+            self.canvas.set_markers([(ref["002"]["two_theta"], "C(002)"),
+                                     (ref["100"]["two_theta"], "C(100)"),
+                                     (ref["110"]["two_theta"], "C(110)")])
             mode = self._la_mode()
             if mode in ("110", "100"):
                 self.sp_direct.blockSignals(True)
@@ -1275,6 +1435,27 @@ class MainWindow(QMainWindow):
             self.canvas.set_selected(-1)
             return
         self.canvas.set_selected(rows[0].row())
+
+    def _toggle_peak_labels(self, on: bool) -> None:
+        """图上 2θ 角度标注开关（关掉后是一张不带任何标注的干净谱图）。"""
+        self.canvas.show_labels = bool(on)
+        self.canvas.update()
+
+    def _delete_peak(self) -> None:
+        """把误识别的峰从峰表与谱图上删掉（不改变原始谱数据）。"""
+        rows = self.tbl_peaks.selectionModel().selectedRows()
+        if not rows or rows[0].row() >= len(self.peaks):
+            QMessageBox.information(self, APP_NAME, tr("pat.no_peak"))
+            return
+        i = rows[0].row()
+        tt = self.peaks[i].two_theta
+        del self.peaks[i]
+        self.canvas.set_selected(-1)
+        self.canvas.set_peaks(self.peaks)
+        self.tbl_peaks.clearSelection()
+        self._fill_peak_table()
+        self.canvas.update()
+        self.lb_status.setText(tr("pat.del_ok", tt=tt))
 
     def _selected_peak(self) -> eng.PeakFit | None:
         rows = self.tbl_peaks.selectionModel().selectedRows()

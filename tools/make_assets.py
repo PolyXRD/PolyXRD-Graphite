@@ -24,6 +24,7 @@ from __future__ import annotations
 import base64
 import io
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -128,6 +129,16 @@ def build_icon() -> tuple[Image.Image, dict]:
     return img.resize((size, size), Image.LANCZOS), {}
 
 
+def app_version() -> str:
+    """从 graphite_app.py 读 APP_VERSION，避免 splash 上的版本号与源码脱节。"""
+    try:
+        text = (ROOT / "graphite_app.py").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    m = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', text)
+    return m.group(1) if m else ""
+
+
 def build_splash() -> tuple[Image.Image, dict]:
     W, H = 960, 540
     s = 2
@@ -158,7 +169,7 @@ def build_splash() -> tuple[Image.Image, dict]:
     d.text((x0, 300 * s), t1, font=f_title, fill=WHITE)
     d.text((x0 + (b1[2] - b1[0]), 300 * s), t2, font=f_title, fill=CYAN)
 
-    center("v1.0.0", 366, f_ver, (186, 203, 219))
+    center("v" + app_version(), 366, f_ver, (186, 203, 219))
     center("石墨化度 · Lc · La 测定工具", 398, f_sub, (150, 172, 192))
     center("Graphitization degree · Lc · La   |   Si internal standard", 434,
            f_small, (110, 133, 155))
